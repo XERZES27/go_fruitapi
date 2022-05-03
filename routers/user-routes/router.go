@@ -1,12 +1,12 @@
-package main
+package routes
 
 import (
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func UserRoutes(rg *gin.RouterGroup, database *mongo.Database) {
-	authRouter := rg.Group("/auth")
-	AuthRoutes(authRouter, database)
+func Routes(rg *gin.RouterGroup, database *mongo.Database) {
+
+	AuthRoutes(rg.Group("/auth"), database)
 
 }

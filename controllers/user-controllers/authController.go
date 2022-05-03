@@ -1,10 +1,12 @@
-package main
+package controllers
 
 import (
 	"context"
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 	"unicode"
 
@@ -12,8 +14,10 @@ import (
 	"github.com/golang-jwt/jwt"
 	"golang.org/x/crypto/bcrypt"
 
+	model "github.com/XERZES27/go_fruitapi/models"
 	"github.com/go-playground/validator/v10"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
@@ -47,6 +51,27 @@ func validatePassword(fl validator.FieldLevel) bool {
 		}
 	}
 	return hasMinLen && hasUpper && hasLower && hasNumber && hasSpecial
+}
+
+func validatePhoneNumber(f1 validator.FieldLevel) bool {
+	phoneNumber := f1.Field().String()
+	isValid := true
+	switch len(phoneNumber) {
+	case 13:
+		if strings.HasPrefix(phoneNumber, "+2519") {
+			_, err := strconv.Atoi(phoneNumber[5:])
+			isValid = err == nil
+		}
+	case 10:
+		if strings.HasPrefix(phoneNumber, "09") {
+			_, err := strconv.Atoi(phoneNumber[2:])
+			isValid = err == nil
+		}
+
+	default:
+		isValid = false
+	}
+	return isValid
 }
 
 func HashPassword(password string) (string, error) {
@@ -90,24 +115,35 @@ func getKeys(privKey *[]byte, pubKey *[]byte) error {
 
 }
 
+func formatPhoneNumber(phoneNumber string) string {
+	if len(phoneNumber) == 13 {
+		return "0" + phoneNumber[4:]
+	}
+	return phoneNumber
+}
+
 func Register(userCollection *mongo.Collection) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var user User
+		var user model.User
 		e1 := c.ShouldBind(&user)
 		if e1 != nil {
 			c.IndentedJSON(http.StatusBadRequest, gin.H{"message": "Missing query parameter", "reason": e1.Error()})
 			return
 		}
+
 		validate := validator.New()
 		validate.RegisterValidation("password", validatePassword)
-
+		validate.RegisterValidation("phoneNumber", validatePhoneNumber)
+		user.PhoneNumber = formatPhoneNumber(user.PhoneNumber)
+		user.Date = primitive.NewDateTimeFromTime(time.Now().UTC())
+		user.Disabled = false
 		e2 := validate.Struct(user)
 		if e2 != nil {
 			c.IndentedJSON(http.StatusBadRequest, gin.H{"message": "Invalid Schema", "reason": e2.Error()})
 			return
 		}
 		var result bson.M
-		e3 := userCollection.FindOne(context.TODO(), bson.M{"name": user.Name}).Decode(&result)
+		e3 := userCollection.FindOne(context.TODO(), bson.M{"ስልክ_ቁጥር": user.PhoneNumber}).Decode(&result)
 		if e3 != nil {
 			if e3 != mongo.ErrNoDocuments {
 				c.IndentedJSON(http.StatusInternalServerError, gin.H{"message": e3.Error()})
@@ -137,21 +173,24 @@ func Register(userCollection *mongo.Collection) gin.HandlerFunc {
 
 func Login(userCollection *mongo.Collection) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var basicUser LoginBasicUser
-		e1 := c.ShouldBind(&basicUser)
+		var user model.LoginUser
+		e1 := c.ShouldBind(&user)
 		if e1 != nil {
 			c.IndentedJSON(http.StatusBadRequest, gin.H{"message": "Missing query parameter", "reason": e1.Error()})
 			return
 		}
 		validate := validator.New()
 		validate.RegisterValidation("password", validatePassword)
-		e2 := validate.Struct(basicUser)
+		validate.RegisterValidation("phoneNumber", validatePhoneNumber)
+		user.PhoneNumber = formatPhoneNumber(user.PhoneNumber)
+		fmt.Println(user.PhoneNumber)
+		e2 := validate.Struct(user)
 		if e2 != nil {
 			c.IndentedJSON(http.StatusBadRequest, gin.H{"message": "Invalid Schema"})
 			return
 		}
 		var result bson.M
-		e3 := userCollection.FindOne(context.TODO(), bson.M{"email": basicUser.Email}).Decode(&result)
+		e3 := userCollection.FindOne(context.TODO(), bson.M{"ስልክ_ቁጥር": user.PhoneNumber}).Decode(&result)
 		if e3 != nil {
 			if e3 == mongo.ErrNoDocuments {
 				c.IndentedJSON(http.StatusBadRequest, gin.H{"message": "Invalid Email Password Combination"})
@@ -162,7 +201,7 @@ func Login(userCollection *mongo.Collection) gin.HandlerFunc {
 			}
 		}
 
-		passwordMatches := CheckPasswordHash(basicUser.Password, fmt.Sprintf("%v", result["password"]))
+		passwordMatches := CheckPasswordHash(user.Password, fmt.Sprintf("%v", result["የሚስጥር_ቁጥር"]))
 		if !passwordMatches {
 			c.IndentedJSON(http.StatusBadRequest, gin.H{"message": "Invalid Email Password Combination"})
 			return
@@ -194,6 +233,6 @@ func Login(userCollection *mongo.Collection) gin.HandlerFunc {
 			return
 		}
 
-		c.IndentedJSON(http.StatusOK, gin.H{"data": re})
+		c.IndentedJSON(http.StatusOK, gin.H{"id": result["_id"], "X-Access-Token": re})
 	}
 }

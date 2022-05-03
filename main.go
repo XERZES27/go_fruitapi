@@ -7,6 +7,8 @@ import (
 	"os"
 	"time"
 
+	adminRoutes "github.com/XERZES27/go_fruitapi/routers/admin-routes"
+	userRoutes "github.com/XERZES27/go_fruitapi/routers/user-routes"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -26,10 +28,10 @@ func Run(database *mongo.Database) {
 
 func getRoutes(database *mongo.Database) {
 	userRouter := router.Group("/user")
-	UserRoutes(userRouter, database)
+	userRoutes.Routes(userRouter, database)
 
 	adminRouter := router.Group("/admin")
-	AdminRoutes(adminRouter, database)
+	adminRoutes.Routes(adminRouter, database)
 }
 
 func main() {
@@ -54,9 +56,8 @@ func main() {
 	if err := client.Ping(context.TODO(), readpref.Primary()); err != nil {
 		panic(err)
 	}
-	database := client.Database("TestFruitDatabase")
+	database := client.Database("myFirstDatabase")
 
-	basicUserCollection := database.Collection("basicUsers")
 
 	Run(database)
 
