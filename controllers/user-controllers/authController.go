@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -14,16 +13,12 @@ import (
 	"github.com/golang-jwt/jwt"
 	"golang.org/x/crypto/bcrypt"
 
+	helper "github.com/XERZES27/go_fruitapi/helpers"
 	model "github.com/XERZES27/go_fruitapi/models"
 	"github.com/go-playground/validator/v10"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
-)
-
-var (
-	publicKey  []byte
-	privateKey []byte
 )
 
 func validatePassword(fl validator.FieldLevel) bool {
@@ -84,37 +79,6 @@ func CheckPasswordHash(password string, hash string) bool {
 	return err == nil
 }
 
-func getKeys(privKey *[]byte, pubKey *[]byte) error {
-	if len(privateKey) == 0 && len(publicKey) == 0 {
-		wd, err := os.Getwd()
-		if err != nil {
-
-			return err
-		}
-		priv, err := os.ReadFile(wd + "/keys/privkey.pem")
-		if err != nil {
-
-			return err
-		}
-		pub, err := os.ReadFile(wd + "/keys/pubkey.pem")
-		if err != nil {
-			return err
-		}
-		privateKey = priv
-		publicKey = pub
-
-		*privKey = privateKey
-		*pubKey = publicKey
-		return nil
-	} else {
-
-		*privKey = privateKey
-		*pubKey = publicKey
-		return nil
-	}
-
-}
-
 func formatPhoneNumber(phoneNumber string) string {
 	if len(phoneNumber) == 13 {
 		return "0" + phoneNumber[4:]
@@ -127,7 +91,7 @@ func Register(userCollection *mongo.Collection) gin.HandlerFunc {
 		var user model.User
 		e1 := c.ShouldBind(&user)
 		if e1 != nil {
-			c.IndentedJSON(http.StatusBadRequest, gin.H{"message": "Missing query parameter", "reason": e1.Error()})
+			c.IndentedJSON(http.StatusBadRequest, gin.H{"status": "Invalid Data", "reason": e1.Error()})
 			return
 		}
 
@@ -139,31 +103,31 @@ func Register(userCollection *mongo.Collection) gin.HandlerFunc {
 		user.Disabled = false
 		e2 := validate.Struct(user)
 		if e2 != nil {
-			c.IndentedJSON(http.StatusBadRequest, gin.H{"message": "Invalid Schema", "reason": e2.Error()})
+			c.IndentedJSON(http.StatusBadRequest, gin.H{"status": "Invalid Schema", "reason": e2.Error()})
 			return
 		}
 		var result bson.M
 		e3 := userCollection.FindOne(context.TODO(), bson.M{"ስልክ_ቁጥር": user.PhoneNumber}).Decode(&result)
 		if e3 != nil {
 			if e3 != mongo.ErrNoDocuments {
-				c.IndentedJSON(http.StatusInternalServerError, gin.H{"message": e3.Error()})
+				c.IndentedJSON(http.StatusInternalServerError, gin.H{"status": e3.Error()})
 				return
 			}
 		}
 		if len(result) > 0 {
-			c.IndentedJSON(http.StatusBadRequest, gin.H{"message": "Document Already Exists"})
+			c.IndentedJSON(http.StatusBadRequest, gin.H{"status": "Document Already Exists"})
 			return
 		}
 		hashedPassword, e4 := HashPassword(user.Password)
 		if e4 != nil {
-			c.IndentedJSON(http.StatusInternalServerError, gin.H{"message": "internal error"})
+			c.IndentedJSON(http.StatusInternalServerError, gin.H{"status": "internal error"})
 			return
 		}
 		user.Password = hashedPassword
 
 		basicUserResult, err := userCollection.InsertOne(context.TODO(), user)
 		if err != nil {
-			c.IndentedJSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+			c.IndentedJSON(http.StatusInternalServerError, gin.H{"status": err.Error()})
 			return
 		}
 		c.IndentedJSON(http.StatusOK, gin.H{"ID": basicUserResult.InsertedID})
@@ -176,63 +140,64 @@ func Login(userCollection *mongo.Collection) gin.HandlerFunc {
 		var user model.LoginUser
 		e1 := c.ShouldBind(&user)
 		if e1 != nil {
-			c.IndentedJSON(http.StatusBadRequest, gin.H{"message": "Missing query parameter", "reason": e1.Error()})
+			c.IndentedJSON(http.StatusBadRequest, gin.H{"status": "Invalid Data", "reason": e1.Error()})
 			return
 		}
 		validate := validator.New()
 		validate.RegisterValidation("password", validatePassword)
 		validate.RegisterValidation("phoneNumber", validatePhoneNumber)
 		user.PhoneNumber = formatPhoneNumber(user.PhoneNumber)
-		fmt.Println(user.PhoneNumber)
 		e2 := validate.Struct(user)
 		if e2 != nil {
-			c.IndentedJSON(http.StatusBadRequest, gin.H{"message": "Invalid Schema"})
+			c.IndentedJSON(http.StatusBadRequest, gin.H{"status": "Invalid Schema"})
 			return
 		}
-		var result bson.M
+		var result model.User
 		e3 := userCollection.FindOne(context.TODO(), bson.M{"ስልክ_ቁጥር": user.PhoneNumber}).Decode(&result)
 		if e3 != nil {
 			if e3 == mongo.ErrNoDocuments {
-				c.IndentedJSON(http.StatusBadRequest, gin.H{"message": "Invalid Email Password Combination"})
+				c.IndentedJSON(http.StatusBadRequest, gin.H{"status": "Invalid Email Password Combination"})
 				return
 			} else {
-				c.IndentedJSON(http.StatusInternalServerError, gin.H{"message": "internal error"})
+				c.IndentedJSON(http.StatusInternalServerError, gin.H{"status": "internal error"})
 				return
 			}
 		}
 
-		passwordMatches := CheckPasswordHash(user.Password, fmt.Sprintf("%v", result["የሚስጥር_ቁጥር"]))
+		passwordMatches := CheckPasswordHash(user.Password, fmt.Sprintf("%v", result.Password))
 		if !passwordMatches {
-			c.IndentedJSON(http.StatusBadRequest, gin.H{"message": "Invalid Email Password Combination"})
+			c.IndentedJSON(http.StatusBadRequest, gin.H{"status": "Invalid Email Password Combination"})
 			return
 		}
 
 		t := jwt.New(jwt.GetSigningMethod("RS256"))
 
-		t.Claims = jwt.StandardClaims{
-			ExpiresAt: time.Now().Add(5 * time.Minute).Unix(),
-			Issuer:    "Server",
-			Id:        fmt.Sprint(result["_id"]),
-		}
+		t.Claims = &helper.CustomClaims{
+			Issuer:      "Server",
+			IssuedAt:    time.Now().Unix(),
+			Id:          result.ID.Hex(),
+			CompanyName: fmt.Sprintf(result.CompanyName),
+			PhoneNumber: fmt.Sprintf(result.PhoneNumber)}
+
 		var pubKey []byte
 		var privKey []byte
-		keyErr := getKeys(&privKey, &pubKey)
+		keyErr := helper.GetKeys(&privKey, &pubKey, "user")
 		if keyErr != nil {
-			c.IndentedJSON(http.StatusInternalServerError, gin.H{"message": "internal error"})
+			c.IndentedJSON(http.StatusInternalServerError, gin.H{"status": "internal error"})
 			return
 		}
 		signKey, err1 := jwt.ParseRSAPrivateKeyFromPEM(privKey)
 		if err1 != nil {
-			c.IndentedJSON(http.StatusBadRequest, gin.H{"message": err1.Error()})
+			c.IndentedJSON(http.StatusBadRequest, gin.H{"status": err1.Error()})
 			return
 		}
 
 		re, e5 := t.SignedString(signKey)
 		if e5 != nil {
-			c.IndentedJSON(http.StatusBadRequest, gin.H{"message": e5.Error()})
+			c.IndentedJSON(http.StatusBadRequest, gin.H{"status": e5.Error()})
 			return
 		}
 
-		c.IndentedJSON(http.StatusOK, gin.H{"id": result["_id"], "X-Access-Token": re})
+		c.IndentedJSON(http.StatusOK, gin.H{"id": result.ID, "X-Access-Token": re})
 	}
 }
