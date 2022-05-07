@@ -23,7 +23,7 @@ var (
 // Run will start the server
 func Run(database *mongo.Database) {
 	getRoutes(database)
-	router.Run(":5000")
+	router.Run("localhost:5000")
 }
 
 func getRoutes(database *mongo.Database) {

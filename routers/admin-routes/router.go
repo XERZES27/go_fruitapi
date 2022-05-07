@@ -6,5 +6,7 @@ import (
 )
 
 func Routes(rg *gin.RouterGroup, database *mongo.Database) {
+	AuthRoutes(rg.Group("/auth"), database)
+	AccountRouter(rg.Group("/account"),database)
 
 }

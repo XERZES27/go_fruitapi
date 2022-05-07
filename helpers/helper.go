@@ -3,6 +3,7 @@ package helpers
 import (
 	"crypto/x509"
 	"encoding/pem"
+	"fmt"
 	"net/http"
 	"os"
 
@@ -11,12 +12,26 @@ import (
 )
 
 var (
-	publicKey  []byte
-	privateKey []byte
+	publicUserKey   []byte
+	privateUserKey  []byte
+	publicAdminKey  []byte
+	privateAdminKey []byte
 )
 
 func GetKeys(privKey *[]byte, pubKey *[]byte, accountType string) error {
-	if len(privateKey) == 0 && len(publicKey) == 0 {
+	var privateKey *[]byte
+	var publicKey *[]byte
+	if accountType == "user" {
+		privateKey = &publicUserKey
+		publicKey = &privateUserKey
+
+	} else {
+		privateKey = &publicAdminKey
+		publicKey = &privateAdminKey
+
+	}
+	if len(*publicKey) == 0 && len(*privateKey) == 0 {
+		fmt.Println("from disk")
 		wd, err := os.Getwd()
 		if err != nil {
 
@@ -31,20 +46,28 @@ func GetKeys(privKey *[]byte, pubKey *[]byte, accountType string) error {
 		if err != nil {
 			return err
 		}
-		privateKey = priv
-		publicKey = pub
+		if accountType == "user" {
+			publicUserKey = priv
+			privateUserKey = pub
 
-		*privKey = privateKey
-		*pubKey = publicKey
+		} else {
+			publicAdminKey = priv
+			privateAdminKey = pub
+
+		}
+		*privKey = priv
+		*pubKey = pub
+
 		return nil
 	} else {
-
-		*privKey = privateKey
-		*pubKey = publicKey
+		fmt.Println("from memory")
+		*privKey = *privateKey
+		*pubKey = *publicKey
 		return nil
 	}
 
 }
+
 func VerifyToken(accountType string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var pubKey []byte
@@ -70,33 +93,57 @@ func VerifyToken(accountType string) gin.HandlerFunc {
 		}
 
 		token := c.GetHeader("X-Access-Token")
-		claims := &CustomClaims{}
 
-		tkn, err := jwt.ParseWithClaims(token, claims, func(token *jwt.Token) (interface{}, error) {
+		if accountType == "user" {
+			claims := &CustomClaims{}
+			tkn, err1 := jwt.ParseWithClaims(token, claims, func(token *jwt.Token) (interface{}, error) {
 
-			return pub, nil
-		})
+				return pub, nil
+			})
+			if err1 != nil {
+				if err1 == jwt.ErrSignatureInvalid {
+					c.IndentedJSON(http.StatusUnauthorized, gin.H{"message": "Unauthorized"})
+					c.Abort()
+				}
+				c.IndentedJSON(http.StatusBadRequest, gin.H{"message": "invalid token", "reason": err.Error()})
 
-		if err != nil {
-			if err == jwt.ErrSignatureInvalid {
+				c.Abort()
+				return
+			}
+			if !tkn.Valid {
 				c.IndentedJSON(http.StatusUnauthorized, gin.H{"message": "Unauthorized"})
 				c.Abort()
+				return
 			}
-			c.IndentedJSON(http.StatusBadRequest, gin.H{"message": "invalid token"})
-
-			c.Abort()
-			return
-		}
-		if !tkn.Valid {
-			c.IndentedJSON(http.StatusUnauthorized, gin.H{"message": "Unauthorized"})
-			c.Abort()
-			return
-		}
-		if accountType == "user" {
 			c.Set("CompanyName", claims.CompanyName)
 			c.Set("PhoneNumber", claims.PhoneNumber)
 			c.Set("Id", claims.Id)
+
+			c.Next()
+		} else {
+			claims := &jwt.StandardClaims{}
+			tkn, err := jwt.ParseWithClaims(token, claims, func(token *jwt.Token) (interface{}, error) {
+
+				return pub, nil
+			})
+			if err != nil {
+				if err == jwt.ErrSignatureInvalid {
+					c.IndentedJSON(http.StatusUnauthorized, gin.H{"message": "Unauthorized"})
+					c.Abort()
+				}
+				c.IndentedJSON(http.StatusBadRequest, gin.H{"message": "invalid token", "reason": err.Error()})
+
+				c.Abort()
+				return
+			}
+			if !tkn.Valid {
+				c.IndentedJSON(http.StatusUnauthorized, gin.H{"message": "Unauthorized"})
+				c.Abort()
+				return
+			}
+			c.Set("Id", claims.Id)
+			c.Next()
 		}
-		c.Next()
+
 	}
 }

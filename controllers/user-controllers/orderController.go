@@ -161,10 +161,13 @@ func CancelOrder(orderCollection *mongo.Collection) gin.HandlerFunc {
 		if UpdateResult.MatchedCount == 0 {
 			c.IndentedJSON(http.StatusBadRequest, gin.H{"status": "Could not find order"})
 
-		} else {
-			c.IndentedJSON(http.StatusOK, gin.H{"status": "Update Successful"})
+		} else if UpdateResult.ModifiedCount == 0 {
 
+			c.IndentedJSON(http.StatusBadRequest, gin.H{"status": "Did not update order"})
+			return
 		}
+		c.IndentedJSON(http.StatusOK, gin.H{"status": "Update Successful"})
+
 	}
 }
 
