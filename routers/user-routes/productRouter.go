@@ -10,4 +10,5 @@ import (
 func ProductRouter(productRouter *gin.RouterGroup, database *mongo.Database){
 	productCollection := database.Collection("products")
 	productRouter.GET("/getProducts",helper.VerifyToken("user"), userController.GetProducts(productCollection))
-}
+	
+	}

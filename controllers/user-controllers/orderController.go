@@ -153,25 +153,40 @@ func CancelOrder(orderCollection *mongo.Collection) gin.HandlerFunc {
 			c.IndentedJSON(http.StatusBadRequest, gin.H{"status": "Invalid Id"})
 			return
 		}
-		UpdateResult, err := orderCollection.UpdateByID(context.TODO(), Id, bson.M{"$set": bson.M{"canceled": true}})
+		userId, _ := c.Get("Id")
+		UserId, err := primitive.ObjectIDFromHex(fmt.Sprint(userId))
 		if err != nil {
 			c.IndentedJSON(http.StatusInternalServerError, gin.H{"status": err.Error()})
 			return
 		}
-		if UpdateResult.MatchedCount == 0 {
-			c.IndentedJSON(http.StatusBadRequest, gin.H{"status": "Could not find order"})
+		arrayMatch := []bson.M{
+			{"$match": bson.M{"_id": Id, "userId": UserId}},
+			{"$set": bson.M{"canceled": true}},
+		}
 
-		} else if UpdateResult.ModifiedCount == 0 {
-
-			c.IndentedJSON(http.StatusBadRequest, gin.H{"status": "Did not update order"})
+		showInfoCursor, err := orderCollection.Aggregate(context.TODO(), arrayMatch)
+		if err != nil {
+			if err == mongo.ErrNoDocuments {
+				c.IndentedJSON(http.StatusBadRequest, gin.H{"status": "Could not find order"})
+				return
+			}
+			c.IndentedJSON(http.StatusInternalServerError, gin.H{"status": err.Error()})
 			return
 		}
-		c.IndentedJSON(http.StatusOK, gin.H{"status": "Update Successful"})
-
+		var result []bson.M
+		if err = showInfoCursor.All(context.TODO(), &result); err != nil {
+			c.IndentedJSON(http.StatusInternalServerError, gin.H{"stauts": err.Error()})
+			return
+		}
+		if len(result)==0{
+			c.IndentedJSON(http.StatusBadRequest, gin.H{"stauts": "Could not cancel order"})
+			return
+		}
+		c.IndentedJSON(http.StatusOK, gin.H{"data": result})
 	}
 }
 
-func GetOrder(orderCollection *mongo.Collection) gin.HandlerFunc {
+func GetOrders(orderCollection *mongo.Collection) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var query bson.M
 		userId, _ := c.Get("Id")

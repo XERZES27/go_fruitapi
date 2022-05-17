@@ -13,6 +13,6 @@ func OrderRouter(orderRouter *gin.RouterGroup, database *mongo.Database) {
 	verifyToken := helper.VerifyToken("user")
 	orderRouter.POST("/createOrder", verifyToken, userController.CreateOrder(orderCollection, productCollection))
 	orderRouter.POST("/cancelOrder", verifyToken, userController.CancelOrder(orderCollection))
-	orderRouter.GET("/getOrders", verifyToken, userController.GetOrder(orderCollection))
+	orderRouter.GET("/getOrders", verifyToken, userController.GetOrders(orderCollection))
 
 }

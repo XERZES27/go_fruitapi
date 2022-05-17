@@ -3,7 +3,6 @@ package helpers
 import (
 	"crypto/x509"
 	"encoding/pem"
-	"fmt"
 	"net/http"
 	"os"
 
@@ -31,7 +30,6 @@ func GetKeys(privKey *[]byte, pubKey *[]byte, accountType string) error {
 
 	}
 	if len(*publicKey) == 0 && len(*privateKey) == 0 {
-		fmt.Println("from disk")
 		wd, err := os.Getwd()
 		if err != nil {
 
@@ -60,7 +58,6 @@ func GetKeys(privKey *[]byte, pubKey *[]byte, accountType string) error {
 
 		return nil
 	} else {
-		fmt.Println("from memory")
 		*privKey = *privateKey
 		*pubKey = *publicKey
 		return nil
